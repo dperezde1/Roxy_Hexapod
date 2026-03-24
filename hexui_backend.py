@@ -252,6 +252,7 @@ class HexUIBackend:
             print(f"[HexUI] Mode {self.active_gait_name} does not support '{cmd_name}' yet.")
             time.sleep(0.5) # small backoff to prevent log spam
 
+    def shutdown(self):
         print("\n[HexUI] Shutting down...")
         self.telem_running = False
         if hasattr(self, 'telem_thread'):
