@@ -15,7 +15,10 @@ import type { TargetData } from './types';
 function App() {
   const [mqttConnected, setMqttConnected] = useState(false);
   const [targetData, setTargetData] = useState<TargetData>({ detected: false, distanceMeter: 0, confidence: 0, direction: 'none' });
-  const brokerUrl = 'ws://localhost:9001'; // Default MQTT WebSocket URL. Adjust as necessary for the Pi 5.
+
+  // 🛠️ CONFIGURATION: Set this to your Raspberry Pi's IP address
+  const PI_IP = 'localhost'; 
+  const brokerUrl = `ws://${PI_IP}:9001`;
 
   useEffect(() => {
     // Attempt connection
@@ -50,7 +53,7 @@ function App() {
       {/* Main Grid Panels */}
       
       {/* 1. Camera Feed (Center/Right-ish Focus) */}
-      <CameraFeed streamUrl="http://localhost:8080/?action=stream" targetData={targetData} /> {/* Placeholder MJPEG Stream URL */}
+      <CameraFeed streamUrl={`http://${PI_IP}:8080/?action=stream`} targetData={targetData} /> {/* Placeholder MJPEG Stream URL */}
       
       {/* 2. IMU Orientation Data (Left) */}
       <IMUDisplay />
