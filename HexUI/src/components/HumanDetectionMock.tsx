@@ -40,25 +40,25 @@ export const HumanDetectionMock: React.FC<HumanDetectionMockProps> = ({ targetDa
         </div>
       </div>
       
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', flex: 1, justifyContent: 'center' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', flex: 1, justifyContent: 'center' }}>
         <div style={{ 
-          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1rem',
-          padding: '1.5rem', borderRadius: '12px',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
+          padding: '0.75rem', borderRadius: '12px',
           background: targetData.detected ? 'rgba(239, 68, 68, 0.1)' : 'rgba(16, 185, 129, 0.1)',
           border: `1px solid ${targetData.detected ? 'var(--danger-color)' : 'var(--success-color)'}`,
           transition: 'all 0.3s ease'
         }}>
           {targetData.detected ? (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
-              <span style={{ color: 'var(--danger-color)', fontWeight: 'bold', fontSize: '1.2rem', letterSpacing: '2px' }}>HUMAN DETECTED</span>
-              <div style={{ display: 'flex', gap: '2rem', marginTop: '0.5rem', fontFamily: 'monospace' }}>
+              <span style={{ color: 'var(--danger-color)', fontWeight: 'bold', fontSize: '1rem', letterSpacing: '1px' }}>HUMAN DETECTED</span>
+              <div style={{ display: 'flex', gap: '1rem', marginTop: '0.25rem', fontFamily: 'monospace' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>DISTANCE</span>
-                  <span style={{ fontSize: '1.5rem' }}>{targetData.distanceMeter}m</span>
+                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.65rem' }}>DIST</span>
+                  <span style={{ fontSize: '1.1rem' }}>{targetData.distanceMeter}m</span>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>CONFIDENCE</span>
-                  <span style={{ fontSize: '1.5rem' }}>{targetData.confidence}%</span>
+                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.65rem' }}>CONF</span>
+                  <span style={{ fontSize: '1.1rem' }}>{targetData.confidence}%</span>
                 </div>
               </div>
               <div style={{ color: 'var(--warning-color)', fontSize: '0.875rem', fontWeight: 'bold', marginTop: '0.5rem' }}>

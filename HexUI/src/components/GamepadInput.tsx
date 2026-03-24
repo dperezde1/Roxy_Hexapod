@@ -14,60 +14,104 @@ export const GamepadInput: React.FC = () => {
   
   const requestRef = useRef<number>(0);
   const lastPublishTime = useRef<number>(0);
+  const connectedRef = useRef(false);
+  const lastButtonsRef = useRef<{ [key: number]: boolean }>({});
 
   // Poll gamepad state
   const updateGamepadState = () => {
     const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
     let isGamepadConnected = false;
-
-    // Grab first connected gamepad
-    for (const gamepad of gamepads) {
-      if (gamepad && gamepad.connected) {
-        isGamepadConnected = true;
-        
-        const newAxes = {
-          lx: gamepad.axes[0] || 0,
-          ly: gamepad.axes[1] || 0,
-          rx: gamepad.axes[2] || 0,
-          ry: gamepad.axes[3] || 0
-        };
-        
-        // Add deadzone
-        const deadzone = 0.1;
-        const applyDeadzone = (val: number) => Math.abs(val) > deadzone ? val : 0;
-        
-        newAxes.lx = applyDeadzone(newAxes.lx);
-        newAxes.ly = applyDeadzone(newAxes.ly);
-        newAxes.rx = applyDeadzone(newAxes.rx);
-        newAxes.ry = applyDeadzone(newAxes.ry);
-
-        setAxes(newAxes);
-
-        const newButtons: { [key: number]: boolean } = {};
-        gamepad.buttons.forEach((btn, index) => {
-          newButtons[index] = btn.pressed;
-        });
-        
-        // Since buttons update fast, we can optimize by only setting if changed... but for React state simple replace is fine for this demo
-        setButtons(newButtons);
-
-        // Publish to MQTT at max 20Hz (every 50ms)
-        const now = Date.now();
-        if (now - lastPublishTime.current > 50) {
-          mqttService.publish('hexapod/command/controller', JSON.stringify({
-            axes: newAxes,
-            buttons: newButtons,
-            timestamp: now
-          }));
-          lastPublishTime.current = now;
+    
+    // Find the best gamepad (prioritize 'standard' mapping or those with activity)
+    let selectedGamepad: Gamepad | null = null;
+    for (const g of gamepads) {
+      if (g && g.connected) {
+        if (g.mapping === 'standard') {
+          selectedGamepad = g;
+          break;
         }
-        
-        break; // Only care about first controller
+        if (!selectedGamepad && (g.axes.length > 0 || g.buttons.length > 0)) {
+          selectedGamepad = g;
+        }
       }
     }
 
-    if (connected !== isGamepadConnected) {
+    if (selectedGamepad) {
+      const gamepad = selectedGamepad;
+      isGamepadConnected = true;
+      
+      const a = gamepad.axes;
+      const newAxes = {
+        lx: a[0] || 0,
+        ly: a[1] || 0,
+        rx: (a.length > 4) ? (a[3] || a[2] || 0) : (a[2] || 0),
+        ry: (a.length > 5) ? (a[4] || a[3] || 0) : (a[3] || 0)
+      };
+
+      if (gamepad.mapping === 'standard') {
+          newAxes.rx = a[2] || 0;
+          newAxes.ry = a[3] || 0;
+      } else if (a.length >= 6) {
+         newAxes.rx = a[3] || 0;
+         newAxes.ry = a[4] || 0;
+      }
+
+      // Add deadzone
+      const deadzone = 0.1;
+      const applyDeadzone = (val: number) => Math.abs(val) > deadzone ? val : 0;
+      
+      const processedAxes = {
+        lx: applyDeadzone(newAxes.lx),
+        ly: applyDeadzone(newAxes.ly),
+        rx: applyDeadzone(newAxes.rx),
+        ry: applyDeadzone(newAxes.ry)
+      };
+
+      setAxes(processedAxes);
+
+      const newButtons: { [key: number]: boolean } = {};
+      gamepad.buttons.forEach((btn, index) => {
+        newButtons[index] = btn.pressed;
+      });
+      
+      setButtons(newButtons);
+      
+      // 🚀 Optimistic UI / Debouncing for Gait Switching (Button 3 = Triangle)
+      const trianglePressed = !!newButtons[3];
+      const wasTrianglePressed = !!lastButtonsRef.current[3];
+      
+      if (trianglePressed && !wasTrianglePressed) {
+        console.log("Triangle pressed - toggling gait locally for feedback");
+        setActiveGait(prev => prev === 'TRIPOD' ? 'RIPPLE' : 'TRIPOD');
+      }
+
+      // 🚀 Optimistic UI / Debouncing for Stair Climb (Button 0 = Cross/✖)
+      const crossPressed = !!newButtons[0];
+      const wasCrossPressed = !!lastButtonsRef.current[0];
+      
+      if (crossPressed && !wasCrossPressed) {
+        console.log("Cross pressed - triggering Stair Climb locally for feedback");
+        setActiveGait('STAIR CLIMB');
+      }
+      
+      // Store current buttons for next debounce check
+      lastButtonsRef.current = { ...newButtons };
+
+      const now = Date.now();
+      if (now - lastPublishTime.current > 50) {
+        mqttService.publish('hexapod/command/controller', JSON.stringify({
+          axes: processedAxes,
+          buttons: newButtons,
+          timestamp: now
+        }));
+        lastPublishTime.current = now;
+      }
+    }
+
+    if (connectedRef.current !== isGamepadConnected) {
+      connectedRef.current = isGamepadConnected;
       setConnected(isGamepadConnected);
+      console.log(`Gamepad connection status changed: ${isGamepadConnected}`);
     }
     
     // Loop
@@ -75,8 +119,16 @@ export const GamepadInput: React.FC = () => {
   };
 
   useEffect(() => {
-    window.addEventListener('gamepadconnected', () => setConnected(true));
-    window.addEventListener('gamepaddisconnected', () => setConnected(false));
+    const onConnect = () => {
+      console.log("Browser fired gamepadconnected event");
+      // status will be updated by the polling loop
+    };
+    const onDisconnect = () => {
+      console.log("Browser fired gamepaddisconnected event");
+    };
+
+    window.addEventListener('gamepadconnected', onConnect);
+    window.addEventListener('gamepaddisconnected', onDisconnect);
     
     requestRef.current = requestAnimationFrame(updateGamepadState);
     
@@ -92,8 +144,8 @@ export const GamepadInput: React.FC = () => {
 
     return () => {
       if (requestRef.current) cancelAnimationFrame(requestRef.current);
-      window.removeEventListener('gamepadconnected', () => setConnected(true));
-      window.removeEventListener('gamepaddisconnected', () => setConnected(false));
+      window.removeEventListener('gamepadconnected', onConnect);
+      window.removeEventListener('gamepaddisconnected', onDisconnect);
       mqttService.unsubscribe('hexapod/telemetry/state', handleStateUpdate);
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -153,30 +205,45 @@ export const GamepadInput: React.FC = () => {
           <span style={{ color: connected ? 'var(--success-color)' : 'var(--danger-color)' }}>
             {connected ? 'LINK ACTIVE' : 'NO CONTROLLER'}
           </span>
+          {!connected && (
+            <div style={{
+              fontSize: '0.65rem',
+              color: 'var(--text-secondary)',
+              fontStyle: 'italic',
+              marginLeft: '0.5rem',
+              animation: 'pulse 2s infinite'
+            }}>
+              (Press any button to activate)
+            </div>
+          )}
         </div>
       </div>
       
       <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center', gap: '2rem' }}>
         {renderThumbstick(axes.lx, axes.ly, "LEFT STICK")}
         
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', alignSelf: 'center' }}>
-          {/* Just mapping standard action buttons (A B X Y mapping index 0-3 usually) */}
-          {['A', 'B', 'X', 'Y'].map((label, idx) => (
-            <div key={label} style={{
-              width: '40px', height: '40px', borderRadius: '50%',
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', alignSelf: 'center' }}>
+          {[
+            { label: '✖', color: '#3b82f6', name: 'Cross' },
+            { label: '●', color: '#ef4444', name: 'Circle' },
+            { label: '■', color: '#ec4899', name: 'Square' },
+            { label: '▲', color: '#10b981', name: 'Triangle' }
+          ].map((btn, idx) => (
+            <div key={btn.name} style={{
+              width: '42px', height: '42px', borderRadius: '50%',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontWeight: 'bold', fontFamily: 'monospace',
-              background: buttons[idx] ? 'var(--accent-color)' : 'rgba(0,0,0,0.5)',
-              color: buttons[idx] ? '#fff' : 'var(--text-secondary)',
-              border: `1px solid ${buttons[idx] ? 'var(--accent-color)' : 'rgba(255,255,255,0.1)'}`,
-              boxShadow: buttons[idx] ? '0 0 15px var(--accent-glow)' : 'none',
-              transition: 'background 0.1s'
+              fontWeight: 'bold', fontSize: '1.1rem',
+              background: buttons[idx] ? btn.color : 'rgba(0,0,0,0.5)',
+              color: buttons[idx] ? '#fff' : 'rgba(255,255,255,0.2)',
+              border: `2px solid ${buttons[idx] ? btn.color : 'rgba(255,255,255,0.05)'}`,
+              boxShadow: buttons[idx] ? `0 0 15px ${btn.color}` : 'none',
+              transition: 'all 0.1s',
+              cursor: 'default'
             }}>
-              {label}
+              {btn.label}
             </div>
           ))}
         </div>
-        
         {renderThumbstick(axes.rx, axes.ry, "RIGHT STICK")}
       </div>
     </div>
