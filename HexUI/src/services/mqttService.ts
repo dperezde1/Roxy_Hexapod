@@ -27,7 +27,13 @@ class MqttService {
     this.client.on('connect', () => {
       console.log('Connected to MQTT Broker:', url);
       this.isConnected = true;
-      // Re-subscribe to topics if needed (mqtt.js handles some of this automatically)
+      // Re-subscribe all topics that were registered before the connection was ready
+      for (const topic of this.callbacks.keys()) {
+        this.client!.subscribe(topic, (err) => {
+          if (err) console.error(`Re-subscription error for ${topic}`, err);
+          else console.log(`Subscribed to ${topic}`);
+        });
+      }
     });
 
     this.client.on('message', (topic, message) => {
@@ -38,7 +44,7 @@ class MqttService {
     this.client.on('error', (err) => {
       console.error('MQTT Error: ', err);
       this.isConnected = false;
-      this.client?.end();
+      // Don't call client.end() here — let MQTT.js auto-reconnect
     });
 
     this.client.on('close', () => {

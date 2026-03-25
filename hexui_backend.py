@@ -201,26 +201,26 @@ class HexUIBackend:
             if not self.is_walking:
                 self.is_walking = True
                 
-                # Forward / Backward (LY Axis) Note: Some gamepads Y is negative pushing UP
+                # Forward / Backward (LY Axis) -> Use Active Gait
                 if ly < -self.deadzone:
-                    self._dispatch_command('walk_forward')
+                    self._dispatch_command('walk_forward', force_tripod=False)
                 elif ly > self.deadzone:
-                    self._dispatch_command('walk_backward')
+                    self._dispatch_command('walk_backward', force_tripod=False)
                 
-                # Turning (RX Axis)
+                # Turning (RX Axis) -> Always use Tripod
                 elif rx > self.deadzone:
-                    self._dispatch_command('turn_right')
+                    self._dispatch_command('turn_right', force_tripod=True)
                 elif rx < -self.deadzone:
-                    self._dispatch_command('turn_left')
+                    self._dispatch_command('turn_left', force_tripod=True)
                     
-                # Strafing (LX Axis) - Coming soon!
+                # Strafing (LX Axis) -> Always use Tripod
                 elif lx > self.deadzone:
-                    self._dispatch_command('strafe_right')
+                    self._dispatch_command('strafe_right', force_tripod=True)
                 elif lx < -self.deadzone:
-                    self._dispatch_command('strafe_left')
+                    self._dispatch_command('strafe_left', force_tripod=True)
                     
                 else:
-                    # No stick input -> implicitly stand still
+                    # No stick input -> implicitly stand still using active gait
                     self.active_gait.stop()
                     pass
                 
@@ -242,14 +242,14 @@ class HexUIBackend:
         print(f"\n[MODE] Switched active gait to: {self.active_gait_name}")
         self.ctrl.stand()
 
-    def _dispatch_command(self, cmd_name):
+    def _dispatch_command(self, cmd_name, force_tripod=False):
         """Helper to invoke gait methods safely 1 cycle at a time."""
-        if hasattr(self.active_gait, cmd_name):
-            func = getattr(self.active_gait, cmd_name)
+        gait = self.gaits["TRIPOD"] if force_tripod else self.active_gait
+        if hasattr(gait, cmd_name):
+            func = getattr(gait, cmd_name)
             func(num_cycles=1)  # Execute 1 discrete chunk
         else:
-            # e.g., if Ripple doesn't support turn_right yet
-            print(f"[HexUI] Mode {self.active_gait_name} does not support '{cmd_name}' yet.")
+            print(f"[HexUI] Selected Gait does not support '{cmd_name}' yet.")
             time.sleep(0.5) # small backoff to prevent log spam
 
     def shutdown(self):

@@ -25,9 +25,6 @@ export const IMUDisplay: React.FC = () => {
     };
   }, []);
 
-  const formatAngle = (angle: number) => angle.toFixed(1).padStart(5, ' ');
-  const formatAccel = (accel: number) => accel.toFixed(2).padStart(5, ' ');
-
   return (
     <div className="panel panel-imu" style={{ padding: '0.75rem', gap: '0.4rem' }}>
       <div className="panel-header" style={{ marginBottom: '0.25rem', fontSize: '0.9rem' }}>
