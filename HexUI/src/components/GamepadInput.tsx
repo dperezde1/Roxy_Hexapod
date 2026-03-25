@@ -76,12 +76,13 @@ export const GamepadInput: React.FC = () => {
       
       setButtons(newButtons);
       
-      // 🚀 Gait Switching UI Disabled (Locked to backend state)
+      // 🚀 Optimistic UI / Debouncing for Gait Switching (Button 3 = Triangle)
       const trianglePressed = !!newButtons[3];
       const wasTrianglePressed = !!lastButtonsRef.current[3];
       
       if (trianglePressed && !wasTrianglePressed) {
-        console.log("Triangle pressed - gait switching is disabled by backend");
+        console.log("Triangle pressed - toggling gait locally for feedback");
+        setActiveGait(prev => prev === 'TRIPOD' ? 'RIPPLE' : 'TRIPOD');
       }
 
       // 🚀 Optimistic UI / Debouncing for Stair Climb (Button 0 = Cross/✖)

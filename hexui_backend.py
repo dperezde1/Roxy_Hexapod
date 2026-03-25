@@ -179,8 +179,7 @@ class HexUIBackend:
             was_y_pressed = self.last_buttons.get(3, False)
             
             if is_y_pressed and not was_y_pressed:
-                print("[MODE] Gait switching disabled, locked to RIPPLE")
-                # self._toggle_gait()
+                self._toggle_gait()
                 
             self.last_buttons[3] = is_y_pressed
             
@@ -205,7 +204,9 @@ class HexUIBackend:
                 if is_idle:
                     if self.current_cmd is not None:
                         self.current_cmd = None
-                        self.active_gait.stop() # Interrupts immediately
+                        # Stop all gaits so if we were uniquely using Tripod for strafing, it halts too
+                        for gait in self.gaits.values():
+                            gait.stop()
                 else:
                     if ly < -self.deadzone:
                         self.current_cmd = 'walk_forward'
@@ -226,6 +227,11 @@ class HexUIBackend:
             print(f"[HexUI Error] {e}")
 
     def _toggle_gait(self):
+        with self.cmd_lock:
+            self.current_cmd = None
+            for gait in self.gaits.values():
+                gait.stop()
+                
         if self.active_gait_name == "TRIPOD":
             self.active_gait_name = "RIPPLE"
             self.active_gait = self.gaits["RIPPLE"]
@@ -234,7 +240,6 @@ class HexUIBackend:
             self.active_gait = self.gaits["TRIPOD"]
             
         print(f"\n[MODE] Switched active gait to: {self.active_gait_name}")
-        self.ctrl.stand()
 
     def _gait_worker(self):
         """Background thread executing the current gait command endlessly."""
@@ -248,9 +253,9 @@ class HexUIBackend:
             elif cmd == 'walk_backward':
                 self.active_gait.walk_backward(num_cycles=1)
             elif cmd == 'strafe_right':
-                self.active_gait.strafe_right(num_cycles=1)
+                self.gaits["TRIPOD"].strafe_right(num_cycles=1)
             elif cmd == 'strafe_left':
-                self.active_gait.strafe_left(num_cycles=1)
+                self.gaits["TRIPOD"].strafe_left(num_cycles=1)
             elif cmd == 'turn_right':
                 self.active_gait.turn_right(num_cycles=1)
             elif cmd == 'turn_left':
