@@ -17,7 +17,7 @@ function App() {
   const [targetData, setTargetData] = useState<TargetData>({ detected: false, distanceMeter: 0, confidence: 0, direction: 'none' });
 
   // 🛠️ CONFIGURATION: Set this to your Raspberry Pi's IP address
-  const PI_IP = '172.20.20.2';
+  const PI_IP = '172.20.10.2';
   const brokerUrl = `ws://${PI_IP}:9001`;
 
   useEffect(() => {
