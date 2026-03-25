@@ -80,7 +80,7 @@ class HexUIBackend:
             "TRIPOD": TripodGait(self.ctrl, verbose=False),
             "RIPPLE": RippleGait(self.ctrl, verbose=False),
         }
-        self.active_gait_name = "TRIPOD"
+        self.active_gait_name = "RIPPLE"
         self.active_gait = self.gaits[self.active_gait_name]
         
         # Stair Climbing Sequence
@@ -173,7 +173,8 @@ class HexUIBackend:
             was_y_pressed = self.last_buttons.get(3, False)
             
             if is_y_pressed and not was_y_pressed:
-                self._toggle_gait()
+                print("[MODE] Gait switching disabled, locked to RIPPLE")
+                # self._toggle_gait()
                 
             self.last_buttons[3] = is_y_pressed
             
@@ -207,17 +208,17 @@ class HexUIBackend:
                 elif ly > self.deadzone:
                     self._dispatch_command('walk_backward', force_tripod=False)
                 
-                # Turning (RX Axis) -> Always use Tripod
+                # Turning (RX Axis) -> Uses Active Gait (Ripple)
                 elif rx > self.deadzone:
-                    self._dispatch_command('turn_right', force_tripod=True)
+                    self._dispatch_command('turn_right', force_tripod=False)
                 elif rx < -self.deadzone:
-                    self._dispatch_command('turn_left', force_tripod=True)
+                    self._dispatch_command('turn_left', force_tripod=False)
                     
-                # Strafing (LX Axis) -> Always use Tripod
+                # Strafing (LX Axis) -> Uses Active Gait (Ripple)
                 elif lx > self.deadzone:
-                    self._dispatch_command('strafe_right', force_tripod=True)
+                    self._dispatch_command('strafe_right', force_tripod=False)
                 elif lx < -self.deadzone:
-                    self._dispatch_command('strafe_left', force_tripod=True)
+                    self._dispatch_command('strafe_left', force_tripod=False)
                     
                 else:
                     # No stick input -> implicitly stand still using active gait
