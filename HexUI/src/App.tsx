@@ -6,15 +6,12 @@ import { mqttService } from './services/mqttService';
 // Components
 import { CameraFeed } from './components/CameraFeed';
 import { IMUDisplay } from './components/IMUDisplay';
-import { HumanDetectionMock } from './components/HumanDetectionMock';
 import { GamepadInput } from './components/GamepadInput';
 import { EmergencyStop } from './components/EmergencyStop';
 import { FootContacts } from './components/FootContacts';
-import type { TargetData } from './types';
 
 function App() {
   const [mqttConnected, setMqttConnected] = useState(false);
-  const [targetData, setTargetData] = useState<TargetData>({ detected: false, distanceMeter: 0, confidence: 0, direction: 'none' });
 
   // 🛠️ CONFIGURATION: Set this to your Raspberry Pi's IP address
   const PI_IP = '172.20.10.2';
@@ -52,23 +49,20 @@ function App() {
 
       {/* Main Grid Panels */}
 
-      {/* 1. Camera Feed (Center/Right-ish Focus) */}
-      <CameraFeed streamUrl={`http://${PI_IP}:8080/?action=stream`} targetData={targetData} /> {/* Placeholder MJPEG Stream URL */}
+      {/* 1. Camera Feed (Right, spanning full height) */}
+      <CameraFeed streamUrl={`http://${PI_IP}:8080/?action=stream`} />
 
-      {/* 2. IMU Orientation Data (Left) */}
+      {/* 2. IMU Orientation Data (Left Top) */}
       <IMUDisplay />
 
-      {/* 3. Mock Sensor Data (Right) */}
-      <HumanDetectionMock targetData={targetData} setTargetData={setTargetData} />
-
-      {/* 4. Gamepad input publisher (Bottom Left) */}
+      {/* 3. Gamepad input publisher (Left Middle) */}
       <GamepadInput />
 
-      {/* 5. Emergency Stop (Bottom Right) */}
+      {/* 4. Emergency Stop (Left Bottom) */}
       <EmergencyStop />
 
       {/* Floating Foot Contacts Widget (Overlay bottom right of camera) */}
-      <div style={{ position: 'absolute', bottom: '150px', right: '380px', zIndex: 10 }}>
+      <div style={{ position: 'absolute', bottom: '150px', right: '30px', zIndex: 10 }}>
         <FootContacts />
       </div>
 
