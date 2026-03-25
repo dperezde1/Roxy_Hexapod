@@ -145,10 +145,10 @@ class ServoController:
                         if b_part.startswith("B:"):
                             b_vals = b_part[2:].split(",")
                             if len(b_vals) == 6:
-                                # Software Inversion: Arduino sent 1 for Air (open circuit)
-                                # We flip to 0 for Air, 1 for Ground
+                                # Arduino already inverts with !digitalRead():
+                                # 1 = pressed (ground contact), 0 = not pressed (air)
                                 try:
-                                    self.foot_contacts = [0 if v == '1' else 1 for v in b_vals]
+                                    self.foot_contacts = [int(v) for v in b_vals]
                                 except ValueError:
                                     pass
                                     
