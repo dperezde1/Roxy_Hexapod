@@ -35,6 +35,7 @@ from hexapod_config import (
     LEFT_LEGS,
     GAIT_PARAMS,
     SERVO_CONFIG,
+    STRAFE_PARAMS,
 )
 
 
@@ -106,25 +107,21 @@ class RippleGait:
     #  Trajectory Generator
     # ──────────────────────────────────────────
 
-    def _get_leg_pose(self, leg: int, global_t: float, direction: int) -> dict:
+    def _get_leg_pose(self, leg: int, global_t: float, direction: int, turn_dir: int = 0, strafe_dir: int = 0) -> dict:
         """
         Calculate the required angles for a single leg at a given global time.
         
         direction: +1 for forward walk, -1 for backward walk
+        turn_dir: +1 for right turn, -1 for left turn
+        strafe_dir: +1 for right strafe, -1 for left strafe
         """
         stride    = self.params["stride_angle"]
         hip_lift  = self.params["hip_lift"]
         lift      = self.params["lift_height"]
         
         # Local phase for this leg: shift global time by leg's offset
-        # Result is 0.0 to 1.0 where 0.0 is the start of its swing phase
         local_t = (global_t - self.leg_offsets[leg]) % 1.0
         
-        # We define YAW relative to neutral
-        # Forward YAW mapping:
-        # Right legs: forward = lower yaw (-offset)
-        # Left legs:  forward = higher yaw (+offset)
-        # By default, a "forward" swing moves the leg forward.
         def yaw_angle(offset):
             neutral_yaw = self.neutral[leg]["YAW"]
             if leg in RIGHT_LEGS:
@@ -134,51 +131,75 @@ class RippleGait:
 
         neutral_hip  = self.neutral[leg]["HIP"]
         neutral_knee = self.neutral[leg]["KNEE"]
-        
+        neutral_yaw  = self.neutral[leg]["YAW"]
+
+        # ── Strafing Setup ──
+        if strafe_dir != 0:
+            shift = STRAFE_PARAMS["knee_shift"]
+            is_right = leg in RIGHT_LEGS
+            reach_out = neutral_knee - shift
+            tuck_in   = neutral_knee + shift
+            
+            if strafe_dir == 1:
+                stance_start = reach_out if is_right else tuck_in
+                stance_end   = tuck_in if is_right else reach_out
+            else:
+                stance_start = tuck_in if is_right else reach_out
+                stance_end   = reach_out if is_right else tuck_in
+                
+            swing_start = stance_end
+            swing_end = stance_start
+            
+        # Determine effective linear direction for this leg
+        eff_dir = direction
+        if turn_dir == 1: # Turn right
+            eff_dir = 1 if leg in LEFT_LEGS else -1
+        elif turn_dir == -1: # Turn left
+            eff_dir = -1 if leg in LEFT_LEGS else 1
+            
         # ──  Phase 1: SWING (Leg in air)  ──
         if local_t <= self.duty_cycle:
-            # Map 0 -> duty_cycle to normalized 0.0 -> 1.0
             st = local_t / self.duty_cycle
             st_smooth = _smooth_step(st)
             
-            # Yaw sweeps from BACK to FRONT
-            # IF direction is -1 (walking backward), swing goes FRONT to BACK
-            start_yaw = yaw_angle(-stride) if direction == 1 else yaw_angle(stride)
-            end_yaw   = yaw_angle(stride)  if direction == 1 else yaw_angle(-stride)
-            yaw = _lerp(start_yaw, end_yaw, st_smooth)
+            if strafe_dir != 0:
+                yaw = neutral_yaw
+                base_knee = _lerp(swing_start, swing_end, st_smooth)
+            else:
+                base_knee = neutral_knee
+                start_yaw = yaw_angle(-stride) if eff_dir == 1 else yaw_angle(stride)
+                end_yaw   = yaw_angle(stride)  if eff_dir == 1 else yaw_angle(-stride)
+                yaw = _lerp(start_yaw, end_yaw, st_smooth)
             
             # Trapezoidal Hip/Knee lift
-            # 0-25% lift up
-            # 25-75% hold high
-            # 75-100% lower
             if st <= 0.25:
                 lt = _smooth_step(st / 0.25)
                 hip  = _lerp(neutral_hip,  neutral_hip - hip_lift, lt)
-                knee = _lerp(neutral_knee, neutral_knee + lift,    lt)
+                knee = _lerp(base_knee, base_knee + lift,    lt)
             elif st <= 0.75:
                 hip  = neutral_hip - hip_lift
-                knee = neutral_knee + lift
+                knee = base_knee + lift
             else:
                 lt = _smooth_step((st - 0.75) / 0.25)
                 hip  = _lerp(neutral_hip - hip_lift, neutral_hip,  lt)
-                knee = _lerp(neutral_knee + lift,    neutral_knee, lt)
+                knee = _lerp(base_knee + lift,    base_knee, lt)
                 
         # ──  Phase 2: STANCE (Leg on ground)  ──
         else:
-            # Map duty_cycle -> 1.0 to normalized 0.0 -> 1.0
             stance_fraction = 1.0 - self.duty_cycle
             st = (local_t - self.duty_cycle) / stance_fraction
             
-            # Yaw sweeps from FRONT to BACK
-            start_yaw = yaw_angle(stride)  if direction == 1 else yaw_angle(-stride)
-            end_yaw   = yaw_angle(-stride) if direction == 1 else yaw_angle(stride)
+            if strafe_dir != 0:
+                yaw = neutral_yaw
+                base_knee = _lerp(stance_start, stance_end, st)
+            else:
+                base_knee = neutral_knee
+                start_yaw = yaw_angle(stride)  if eff_dir == 1 else yaw_angle(-stride)
+                end_yaw   = yaw_angle(-stride) if eff_dir == 1 else yaw_angle(stride)
+                yaw = _lerp(start_yaw, end_yaw, st)
             
-            # Linear push for constant body speed
-            yaw = _lerp(start_yaw, end_yaw, st)
-            
-            # Keep hip/knee planted at neutral
             hip  = neutral_hip
-            knee = neutral_knee
+            knee = base_knee
 
         return {
             "YAW":  _clamp_joint(leg, "YAW",  yaw),
@@ -190,7 +211,7 @@ class RippleGait:
     #  Execution Loop
     # ──────────────────────────────────────────
 
-    def _execute_cycles(self, num_cycles: int, direction: int = 1):
+    def _execute_cycles(self, num_cycles: int, direction: int = 1, turn_dir: int = 0, strafe_dir: int = 0):
         """
         Run the ripple gait loop by incrementing global time `t`.
         """
@@ -215,7 +236,7 @@ class RippleGait:
                 
                 pose = {}
                 for leg in range(1, 7):
-                    pose[leg] = self._get_leg_pose(leg, global_t, direction)
+                    pose[leg] = self._get_leg_pose(leg, global_t, direction, turn_dir, strafe_dir)
                     
                 self.ctrl.set_all_legs(pose, verbose_override=False)
                 
@@ -242,6 +263,38 @@ class RippleGait:
         if self.verbose:
             print(f"\n[RIPPLE] Backward × {num_cycles} cycles")
         self._execute_cycles(num_cycles, direction=-1)
+        if self.verbose:
+            print("[RIPPLE] Done.\n")
+
+    def turn_right(self, num_cycles: int = 3):
+        self._running = True
+        if self.verbose:
+            print(f"\n[RIPPLE] Turn Right × {num_cycles} cycles")
+        self._execute_cycles(num_cycles, direction=0, turn_dir=1)
+        if self.verbose:
+            print("[RIPPLE] Done.\n")
+
+    def turn_left(self, num_cycles: int = 3):
+        self._running = True
+        if self.verbose:
+            print(f"\n[RIPPLE] Turn Left × {num_cycles} cycles")
+        self._execute_cycles(num_cycles, direction=0, turn_dir=-1)
+        if self.verbose:
+            print("[RIPPLE] Done.\n")
+
+    def strafe_right(self, num_cycles: int = 3):
+        self._running = True
+        if self.verbose:
+            print(f"\n[RIPPLE] Strafe Right × {num_cycles} cycles")
+        self._execute_cycles(num_cycles, direction=0, turn_dir=0, strafe_dir=1)
+        if self.verbose:
+            print("[RIPPLE] Done.\n")
+
+    def strafe_left(self, num_cycles: int = 3):
+        self._running = True
+        if self.verbose:
+            print(f"\n[RIPPLE] Strafe Left × {num_cycles} cycles")
+        self._execute_cycles(num_cycles, direction=0, turn_dir=0, strafe_dir=-1)
         if self.verbose:
             print("[RIPPLE] Done.\n")
 

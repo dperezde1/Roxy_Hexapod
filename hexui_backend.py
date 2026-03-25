@@ -91,7 +91,13 @@ class HexUIBackend:
         # starting a 'walk' cycle if one is already running.
         self.last_update_ts = 0
         self.deadzone = 0.2
-        self.is_walking = False
+        
+        # Async Command Pattern
+        self.cmd_lock = threading.Lock()
+        self.current_cmd = None
+        self.worker_running = True
+        self.worker_thread = threading.Thread(target=self._gait_worker, daemon=True)
+        self.worker_thread.start()
 
         # Button Debouncing
         self.last_buttons = {0: False, 1: False, 2: False, 3: False}
@@ -182,50 +188,37 @@ class HexUIBackend:
             is_a_pressed = buttons.get("0", False)
             was_a_pressed = self.last_buttons.get(0, False)
             
-            if is_a_pressed and not was_a_pressed and not self.is_walking:
-                self.is_walking = True
+            if is_a_pressed and not was_a_pressed:
+                # Basic interrupt for climbing
+                self.active_gait.stop()
                 self.stair_climb.execute_climb(200) # Climb 200mm
-                self.is_walking = False
                 
             self.last_buttons[0] = is_a_pressed
 
-            # ── 2. Handle Joystick Commands ──
-            # We don't want to block the MQTT callback thread for long walking methods.
-            # In a true continuous system, we map the input vectors to the phase generator.
-            # For our discrete phase algorithms, we trigger 1 cycle at a time if the stick is held.
-            
             ly = axes.get("ly", 0.0)
             lx = axes.get("lx", 0.0)
             rx = axes.get("rx", 0.0)
 
-            # Prevent concurrent overlapping walk requests
-            if not self.is_walking:
-                self.is_walking = True
-                
-                # Forward / Backward (LY Axis) -> Use Active Gait
-                if ly < -self.deadzone:
-                    self._dispatch_command('walk_forward', force_tripod=False)
-                elif ly > self.deadzone:
-                    self._dispatch_command('walk_backward', force_tripod=False)
-                
-                # Turning (RX Axis) -> Uses Active Gait (Ripple)
-                elif rx > self.deadzone:
-                    self._dispatch_command('turn_right', force_tripod=False)
-                elif rx < -self.deadzone:
-                    self._dispatch_command('turn_left', force_tripod=False)
-                    
-                # Strafing (LX Axis) -> Uses Active Gait (Ripple)
-                elif lx > self.deadzone:
-                    self._dispatch_command('strafe_right', force_tripod=False)
-                elif lx < -self.deadzone:
-                    self._dispatch_command('strafe_left', force_tripod=False)
-                    
+            is_idle = (abs(ly) <= self.deadzone and abs(rx) <= self.deadzone and abs(lx) <= self.deadzone)
+
+            with self.cmd_lock:
+                if is_idle:
+                    if self.current_cmd is not None:
+                        self.current_cmd = None
+                        self.active_gait.stop() # Interrupts immediately
                 else:
-                    # No stick input -> implicitly stand still using active gait
-                    self.active_gait.stop()
-                    pass
-                
-                self.is_walking = False
+                    if ly < -self.deadzone:
+                        self.current_cmd = 'walk_forward'
+                    elif ly > self.deadzone:
+                        self.current_cmd = 'walk_backward'
+                    elif lx > self.deadzone:
+                        self.current_cmd = 'strafe_right'
+                    elif lx < -self.deadzone:
+                        self.current_cmd = 'strafe_left'
+                    elif rx > self.deadzone:
+                        self.current_cmd = 'turn_right'
+                    elif rx < -self.deadzone:
+                        self.current_cmd = 'turn_left'
 
         except json.JSONDecodeError:
             pass
@@ -243,21 +236,36 @@ class HexUIBackend:
         print(f"\n[MODE] Switched active gait to: {self.active_gait_name}")
         self.ctrl.stand()
 
-    def _dispatch_command(self, cmd_name, force_tripod=False):
-        """Helper to invoke gait methods safely 1 cycle at a time."""
-        gait = self.gaits["TRIPOD"] if force_tripod else self.active_gait
-        if hasattr(gait, cmd_name):
-            func = getattr(gait, cmd_name)
-            func(num_cycles=1)  # Execute 1 discrete chunk
-        else:
-            print(f"[HexUI] Selected Gait does not support '{cmd_name}' yet.")
-            time.sleep(0.5) # small backoff to prevent log spam
+    def _gait_worker(self):
+        """Background thread executing the current gait command endlessly."""
+        while self.worker_running:
+            cmd = None
+            with self.cmd_lock:
+                cmd = self.current_cmd
+                
+            if cmd == 'walk_forward':
+                self.active_gait.walk_forward(num_cycles=1)
+            elif cmd == 'walk_backward':
+                self.active_gait.walk_backward(num_cycles=1)
+            elif cmd == 'strafe_right':
+                self.active_gait.strafe_right(num_cycles=1)
+            elif cmd == 'strafe_left':
+                self.active_gait.strafe_left(num_cycles=1)
+            elif cmd == 'turn_right':
+                self.active_gait.turn_right(num_cycles=1)
+            elif cmd == 'turn_left':
+                self.active_gait.turn_left(num_cycles=1)
+            else:
+                time.sleep(0.05)
 
     def shutdown(self):
         print("\n[HexUI] Shutting down...")
         self.telem_running = False
+        self.worker_running = False
         if hasattr(self, 'telem_thread'):
             self.telem_thread.join(timeout=1.0)
+        if hasattr(self, 'worker_thread'):
+            self.worker_thread.join(timeout=1.0)
             
         if hasattr(self, 'client'):
             self.client.loop_stop()
