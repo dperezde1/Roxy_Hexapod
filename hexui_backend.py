@@ -24,6 +24,8 @@ import signal
 import math
 import threading
 import paho.mqtt.client as mqtt
+import csv
+from datetime import datetime
 
 # ── Import our core hardware and gait classes ──
 # Because we refactored into 'hexapod_core' and 'gaits' folders, 
@@ -99,8 +101,15 @@ class HexUIBackend:
         self.worker_thread = threading.Thread(target=self._gait_worker, daemon=True)
         self.worker_thread.start()
 
-        # Button Debouncing
+        # Button Debouncing & Telemetry state
         self.last_buttons = {0: False, 1: False, 2: False, 3: False}
+        self.telemetry_dir = os.path.join(os.path.dirname(BASE_DIR), "telemetry")
+        os.makedirs(self.telemetry_dir, exist_ok=True)
+        self.ui_active = False
+        self.last_msg_time = 0.0
+        self.csv_file = None
+        self.csv_writer = None
+        self.session_start_time = 0.0
         
     def start_mqtt(self):
         self.client = mqtt.Client()
@@ -126,6 +135,29 @@ class HexUIBackend:
     def _telemetry_loop(self):
         """Publishes IMU, Foot Contacts, and State at ~10Hz."""
         while self.telem_running:
+            current_time = time.time()
+            ui_is_active = (current_time - self.last_msg_time) < 1.0
+            
+            # Transition from Inactive -> Active
+            if ui_is_active and not self.ui_active:
+                self.ui_active = True
+                self.session_start_time = current_time
+                filename = datetime.now().strftime("%Y-%m-%d_%H-%M-%S_data.csv")
+                csv_path = os.path.join(self.telemetry_dir, filename)
+                self.csv_file = open(csv_path, mode='w', newline='')
+                self.csv_writer = csv.writer(self.csv_file)
+                self.csv_writer.writerow(["Timestamp(s)", "Pitch", "Roll", "Yaw", "Btn_0_Cross", "Btn_1_Circle", "Btn_2_Square", "Btn_3_Triangle"])
+                print(f"\n[TELEMETRY] UI Session Started. Recording to {filename}")
+                
+            # Transition from Active -> Inactive
+            elif not ui_is_active and self.ui_active:
+                self.ui_active = False
+                if self.csv_file is not None:
+                    self.csv_file.close()
+                    self.csv_file = None
+                    self.csv_writer = None
+                print("\n[TELEMETRY] UI Session Ended. CSV File closed.")
+
             if hasattr(self, 'client') and self.client.is_connected():
                 # 1. IMU
                 w, x, y, z = self.ctrl.imu_quaternion
@@ -151,6 +183,22 @@ class HexUIBackend:
                     "active_gait": self.active_gait_name
                 })
                 self.client.publish(TOPIC_STATE, state_msg, qos=0)
+                
+                # ── Record to CSV if active ──
+                if self.ui_active and self.csv_writer is not None:
+                    elapsed = current_time - self.session_start_time
+                    b0 = 1 if self.last_buttons.get(0, False) else 0
+                    b1 = 1 if self.last_buttons.get(1, False) else 0
+                    b2 = 1 if self.last_buttons.get(2, False) else 0
+                    b3 = 1 if self.last_buttons.get(3, False) else 0
+                    
+                    self.csv_writer.writerow([
+                        f"{elapsed:.3f}", 
+                        f"{pitch:.2f}", 
+                        f"{roll:.2f}", 
+                        f"{yaw:.2f}", 
+                        b0, b1, b2, b3
+                    ])
             
             time.sleep(0.1)
 
@@ -172,6 +220,7 @@ class HexUIBackend:
             
             axes = payload.get("axes", {})
             buttons = payload.get("buttons", {})
+            self.last_msg_time = time.time()
 
             # ── 1. Check Buttons for Gait Switching (Debounce) ──
             # Button 3 (Y) toggles the general gait between Tripod/Ripple.
@@ -180,19 +229,22 @@ class HexUIBackend:
             
             if is_y_pressed and not was_y_pressed:
                 self._toggle_gait()
-                
-            self.last_buttons[3] = is_y_pressed
-            
+
             # Button 0 (A) triggers Stair Climb
             is_a_pressed = buttons.get("0", False)
             was_a_pressed = self.last_buttons.get(0, False)
             
             if is_a_pressed and not was_a_pressed:
-                # Basic interrupt for climbing
-                self.active_gait.stop()
-                self.stair_climb.execute_climb(200) # Climb 200mm
-                
-            self.last_buttons[0] = is_a_pressed
+                # Dispatch climb to worker thread securely
+                with self.cmd_lock:
+                    self.current_cmd = 'stair_climb'
+                    for gait in self.gaits.values():
+                        gait._running = False
+
+            # Record all buttons robustly for CSV and future debounce checks
+            for k, v in buttons.items():
+                if k.isdigit():
+                    self.last_buttons[int(k)] = v
 
             ly = axes.get("ly", 0.0)
             lx = axes.get("lx", 0.0)
@@ -204,9 +256,9 @@ class HexUIBackend:
                 if is_idle:
                     if self.current_cmd is not None:
                         self.current_cmd = None
-                        # Stop all gaits so if we were uniquely using Tripod for strafing, it halts too
+                        # Interrupt securely: let worker thread handle the I2C stop()
                         for gait in self.gaits.values():
-                            gait.stop()
+                            gait._running = False
                 else:
                     if ly < -self.deadzone:
                         self.current_cmd = 'walk_forward'
@@ -230,7 +282,7 @@ class HexUIBackend:
         with self.cmd_lock:
             self.current_cmd = None
             for gait in self.gaits.values():
-                gait.stop()
+                gait._running = False
                 
         if self.active_gait_name == "TRIPOD":
             self.active_gait_name = "RIPPLE"
@@ -243,6 +295,7 @@ class HexUIBackend:
 
     def _gait_worker(self):
         """Background thread executing the current gait command endlessly."""
+        was_active = False
         while self.worker_running:
             cmd = None
             with self.cmd_lock:
@@ -250,17 +303,34 @@ class HexUIBackend:
                 
             if cmd == 'walk_forward':
                 self.active_gait.walk_forward(num_cycles=1)
+                was_active = True
             elif cmd == 'walk_backward':
                 self.active_gait.walk_backward(num_cycles=1)
+                was_active = True
             elif cmd == 'strafe_right':
                 self.gaits["TRIPOD"].strafe_right(num_cycles=1)
+                was_active = True
             elif cmd == 'strafe_left':
                 self.gaits["TRIPOD"].strafe_left(num_cycles=1)
+                was_active = True
             elif cmd == 'turn_right':
                 self.active_gait.turn_right(num_cycles=1)
+                was_active = True
             elif cmd == 'turn_left':
                 self.active_gait.turn_left(num_cycles=1)
+                was_active = True
+            elif cmd == 'stair_climb':
+                self.stair_climb.execute_climb(200)
+                with self.cmd_lock:
+                    if self.current_cmd == 'stair_climb':
+                        self.current_cmd = None
+                was_active = True
             else:
+                # If we just finished moving or were interrupted, cleanly stand via the worker thread
+                if was_active:
+                    for g in self.gaits.values():
+                        g.stop()
+                    was_active = False
                 time.sleep(0.05)
 
     def shutdown(self):
@@ -271,6 +341,9 @@ class HexUIBackend:
             self.telem_thread.join(timeout=1.0)
         if hasattr(self, 'worker_thread'):
             self.worker_thread.join(timeout=1.0)
+            
+        if self.csv_file is not None:
+            self.csv_file.close()
             
         if hasattr(self, 'client'):
             self.client.loop_stop()

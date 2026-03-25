@@ -78,12 +78,12 @@ LEG_CHANNELS = {
 # Yaw perpendicular to side wall, hip horizontal, tibia 90° down
 
 NEUTRAL_ANGLES = {
-    1: {"YAW":  90, "HIP": 90, "KNEE": 50},
-    2: {"YAW":  90, "HIP": 90, "KNEE": 50},
-    3: {"YAW":  90, "HIP": 90, "KNEE": 50},
-    4: {"YAW":  90, "HIP": 90, "KNEE": 50},
-    5: {"YAW":  90, "HIP": 90, "KNEE": 50},
-    6: {"YAW":  90, "HIP": 90, "KNEE": 50},
+    1: {"YAW":  90, "HIP": 110, "KNEE": 60},
+    2: {"YAW":  90, "HIP": 110, "KNEE": 60},
+    3: {"YAW":  90, "HIP": 110, "KNEE": 60},
+    4: {"YAW":  90, "HIP": 110, "KNEE": 60},
+    5: {"YAW":  90, "HIP": 110, "KNEE": 60},
+    6: {"YAW":  90, "HIP": 110, "KNEE": 60},
 }
 
 # ═════════════════════════════════════════════════════════════
