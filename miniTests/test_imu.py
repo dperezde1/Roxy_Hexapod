@@ -16,7 +16,7 @@ import serial
 
 # Add hexapod_core to path to easily grab our auto-port-finder
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(os.path.join(BASE_DIR, "hexapod_core"))
+sys.path.append(os.path.join(BASE_DIR, "..", "hexapod_core"))
 
 from servo_control import _find_arduino_port, ARDUINO_BAUD
 

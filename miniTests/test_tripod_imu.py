@@ -13,8 +13,8 @@ import time
 
 # Add core and gaits to path
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(os.path.join(BASE_DIR, "hexapod_core"))
-sys.path.append(os.path.join(BASE_DIR, "gaits"))
+sys.path.append(os.path.join(BASE_DIR, "..", "hexapod_core"))
+sys.path.append(os.path.join(BASE_DIR, "..", "gaits"))
 
 from servo_control import ServoController
 from tripod_walk import TripodGait
