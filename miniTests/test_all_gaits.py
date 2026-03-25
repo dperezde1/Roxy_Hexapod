@@ -17,9 +17,8 @@ import time
 
 # Correctly resolve paths relative to the miniTests folder
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-ROOT_DIR = os.path.dirname(SCRIPT_DIR)
-sys.path.append(os.path.join(ROOT_DIR, "hexapod_core"))
-sys.path.append(os.path.join(ROOT_DIR, "gaits"))
+sys.path.append(os.path.join(SCRIPT_DIR, "..", "hexapod_core"))
+sys.path.append(os.path.join(SCRIPT_DIR, "..", "gaits"))
 
 from servo_control import ServoController
 from tripod_walk import TripodGait
