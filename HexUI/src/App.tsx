@@ -17,7 +17,7 @@ function App() {
   const [targetData, setTargetData] = useState<TargetData>({ detected: false, distanceMeter: 0, confidence: 0, direction: 'none' });
 
   // 🛠️ CONFIGURATION: Set this to your Raspberry Pi's IP address
-  const PI_IP = 'localhost'; 
+  const PI_IP = '172.20.20.2';
   const brokerUrl = `ws://${PI_IP}:9001`;
 
   useEffect(() => {
@@ -40,9 +40,9 @@ function App() {
           <Activity size={32} className="title-icon text-accent" />
           HEXUI COMMAND CENTER
         </h1>
-        
+
         <div className="status-indicator">
-          MQTT BROKER: 
+          MQTT BROKER:
           <span className={`dot ${mqttConnected ? 'connected' : 'disconnected'}`} />
           <span style={{ color: mqttConnected ? 'var(--success-color)' : 'var(--danger-color)' }}>
             {mqttConnected ? 'ONLINE' : 'OFFLINE'}
@@ -51,19 +51,19 @@ function App() {
       </div>
 
       {/* Main Grid Panels */}
-      
+
       {/* 1. Camera Feed (Center/Right-ish Focus) */}
       <CameraFeed streamUrl={`http://${PI_IP}:8080/?action=stream`} targetData={targetData} /> {/* Placeholder MJPEG Stream URL */}
-      
+
       {/* 2. IMU Orientation Data (Left) */}
       <IMUDisplay />
-      
+
       {/* 3. Mock Sensor Data (Right) */}
       <HumanDetectionMock targetData={targetData} setTargetData={setTargetData} />
-      
+
       {/* 4. Gamepad input publisher (Bottom Left) */}
       <GamepadInput />
-      
+
       {/* 5. Emergency Stop (Bottom Right) */}
       <EmergencyStop />
 
