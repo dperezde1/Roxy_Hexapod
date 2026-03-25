@@ -129,13 +129,13 @@ GAIT_PARAMS = {
     "stride_angle":     15,     # degrees (total swing = 2 × this)
 
     # How much the hip raises during swing (subtracted from neutral hip)
-    "hip_lift":         25,     # degrees — lifts leg off the ground
+    "hip_lift":         35,     # degrees — lifts leg off the ground
 
     # How much the knee bends during swing (added to neutral knee angle)
     "lift_height":      20,     # degrees — tucks tibia up
 
     # Number of interpolation sub-steps per half-cycle (phase)
-    "interpolation_steps": 20,
+    "interpolation_steps": 30,
 
     # Seconds between each interpolation sub-step
     "step_delay":       0.02,   # 20 ms → one phase ≈ 0.4 s
